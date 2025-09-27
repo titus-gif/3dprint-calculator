@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="nl">
+
+<head>
+
+  <meta charset="UTF-8">
+  <title>3D Print Calculator</title>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.126.1/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.126.1/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.126.1/examples/js/loaders/STLLoader.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    #viewer {
+      width: 100vw;
+      height: 70vh;
+      display: block;
+    }
+
+    #controls {
+      padding: 15px;
+      background: #f5f5f5;
+      border-top: 1px solid #ddd;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    label {
+      display: inline-block;
+      width: 160px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>3D Print Calculator</h1>
+  <input type="file" id="fileInput" accept=".stl"><br><br>
+  <canvas id="viewer"></canvas>
+
+  <div id="controls">
+    <label for="material">Materiaal:</label>
+    <select id="material">
+      <option value="0.20">PLA (€0.20/gram)</option>
+      <option value="0.25">PLA Tough (€0.25/gram)</option>
+      <option value="0.35">PETG (€0.35/gram)</option>
+      <option value="0.50">ABS (€0.50/gram)</option>
+    </select>
+    <br><br>
+
+    <label for="color">Kleur:</label>
+    <select id="color">
+      <option value="#222222">Zwart (mat)</option>
+      <option value="#ffffff">Wit</option>
+      <option value="#ff0000">Rood</option>
+      <option value="#0000ff">Blauw</option>
+      <option value="#00ff00">Groen</option>
+      <option value="#ffff00">Geel</option>
+      <option value="#cccccc">Grijs</option>
+      <option value="#ff8000">Oranje</option>
+      <option value="#00ffff">Turquoise</option>
+      <option value="#ff00ff">Paars</option>
+      <option value="#eeeeee">Transparant (lichtgrijs)</option>
+    </select>
+    <br><br>
+
+    <label for="infill">Infill (%):</label>
+    <input type="number" id="infill" min="10" max="100" step="5" value="25">
+    <br><br>
+
+    <label for="layer">Laaghoogte (mm):</label>
+    <select id="layer">
+      <option value="0.1">0.1 mm (zeer fijn)</option>
+      <option value="0.2" selected>0.2 mm (fijn)</option>
+      <option value="0.3">0.3 mm (standaard)</option>
+      <option value="0.6">0.6 mm (grof)</option>
+      <option value="0.8">0.8 mm (extra grof)</option>
+      <option value="1.2">1.2 mm (max snelheid)</option>
+    </select>
+    <br><br>
+
+    <p>Gewicht: <span id="weight">0 g</span></p>
+    <p>Materiaalprijs: <span id="matPrice">€ 0.00</span></p>
+    <p>Machinekost: <span id="timePrice">€ 0.00</span></p>
+    <p><strong>Totaal: <span id="price">€ 0.00</span></strong></p>
+    <p>Printtijd: <span id="time">0 h</span></p>
+    <button id="clearBtn">Verwijder model</button>
+  </div>
+
+  <script>
+    let scene, camera, renderer, controls, loader, currentMesh, currentGeometry;
+
+    init();
+
+    function init() {
+      const canvas = document.getElementById("viewer");
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xf0f0f0);
+
+      camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 5000);
+      camera.position.set(0, 0, 200);
+
+      renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+      renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+
+      // Licht
+      const ambient = new THREE.AmbientLight(0x888888, 1.2);
+      scene.add(ambient);
+
+      const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+      dirLight1.position.set(5, 10, 7);
+      scene.add(dirLight1);
+
+      const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
+      dirLight2.position.set(-5, -10, -7);
+      scene.add(dirLight2);
+
+      loader = new THREE.STLLoader();
+
+      animate();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    document.getElementById("fileInput").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (event) {
+        const geometry = loader.parse(event.target.result);
+
+        if (currentMesh) scene.remove(currentMesh);
+
+        const selectedColor = document.getElementById("color").value;
+        const material = new THREE.MeshStandardMaterial({
+          color: selectedColor,
+          roughness: 1.0,
+          metalness: 0.0
+        });
+        currentMesh = new THREE.Mesh(geometry, material);
+
+        geometry.computeBoundingBox();
+        const center = new THREE.Vector3();
+        geometry.boundingBox.getCenter(center);
+        geometry.translate(-center.x, -center.y, -center.z);
+
+        scene.add(currentMesh);
+        currentGeometry = geometry;
+
+        // Check build volume (Builder Extreme 1000)
+        let size = new THREE.Vector3();
+        geometry.boundingBox.getSize(size);
+        if (size.x > 700 || size.y > 700 || size.z > 820) {
+          alert("⚠️ Dit model past niet in de Builder Extreme 1000 (700×700×820 mm).");
+        }
+
+        updateAll();
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    // Volume berekening
+    function computeMeshVolume(geometry) {
+      let positions = geometry.attributes.position.array;
+      let volume = 0;
+      for (let i = 0; i < positions.length; i += 9) {
+        let x1 = positions[i], y1 = positions[i + 1], z1 = positions[i + 2];
+        let x2 = positions[i + 3], y2 = positions[i + 4], z2 = positions[i + 5];
+        let x3 = positions[i + 6], y3 = positions[i + 7], z3 = positions[i + 8];
+        volume += (x1 * (y2 * z3 - y3 * z2) -
+          y1 * (x2 * z3 - x3 * z2) +
+          z1 * (x2 * y3 - x3 * y2)) / 6.0;
+      }
+      return Math.abs(volume);
+    }
+
+    // Gewicht + prijs + tijd berekening
+    function updateAll() {
+      if (!currentGeometry) return;
+
+      let volume = computeMeshVolume(currentGeometry); // mm³
+      let density = 1.24e-3; // g/mm³
+
+      // User input
+      let infill = parseInt(document.getElementById("infill").value) / 100;
+      let layerHeight = parseFloat(document.getElementById("layer").value);
+
+      // Gewicht met infill
+      let weight = volume * density * infill;
+
+      let pricePerGram = parseFloat(document.getElementById("material").value);
+      let materialCost = weight * pricePerGram;
+
+      // Printtijd schatting met infill & correctie
+      let nozzle = 0.4;
+      let speed = 50;
+      let extrusionRate = nozzle * layerHeight * speed; // mm³/s
+      let correctionFactor = 1.3;
+      let effectiveVolume = volume * infill * correctionFactor;
+      let timeSeconds = effectiveVolume / extrusionRate;
+      let timeHours = timeSeconds / 3600;
+
+      // Machinekost
+      let hourlyRate = 3.0; // € per uur
+      let timeCost = timeHours * hourlyRate;
+
+      // Totaal
+      let totalPrice = materialCost + timeCost;
+
+      // Output
+      document.getElementById("weight").innerText = weight.toFixed(1) + " g";
+      document.getElementById("matPrice").innerText = "€ " + materialCost.toFixed(2);
+      document.getElementById("timePrice").innerText = "€ " + timeCost.toFixed(2);
+      document.getElementById("price").innerText = "€ " + totalPrice.toFixed(2);
+      document.getElementById("time").innerText = timeHours.toFixed(1) + " h";
+    }
+
+    document.getElementById("material").addEventListener("change", updateAll);
+    document.getElementById("color").addEventListener("change", () => {
+      if (currentMesh) {
+        currentMesh.material.color.set(document.getElementById("color").value);
+      }
+    });
+    document.getElementById("infill").addEventListener("input", updateAll);
+    document.getElementById("layer").addEventListener("change", updateAll);
+
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      if (currentMesh) scene.remove(currentMesh);
+      currentMesh = null;
+      currentGeometry = null;
+      document.getElementById("weight").innerText = "0 g";
+      document.getElementById("matPrice").innerText = "€ 0.00";
+      document.getElementById("timePrice").innerText = "€ 0.00";
+      document.getElementById("price").innerText = "€ 0.00";
+      document.getElementById("time").innerText = "0 h";
+    });
+  </script>
+</body>
+
+</html>
