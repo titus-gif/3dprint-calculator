@@ -2,7 +2,6 @@
 <html lang="nl">
 
 <head>
-
   <meta charset="UTF-8">
   <title>3D Print Calculator</title>
   <script src="https://cdn.jsdelivr.net/npm/three@0.126.1/build/three.min.js"></script>
@@ -34,6 +33,20 @@
     label {
       display: inline-block;
       width: 160px;
+    }
+
+    button {
+      padding: 8px 16px;
+      background-color: #0078ff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    button:hover {
+      background-color: #005ecc;
     }
   </style>
 </head>
@@ -89,11 +102,13 @@
     <p>Machinekost: <span id="timePrice">€ 0.00</span></p>
     <p><strong>Totaal: <span id="price">€ 0.00</span></strong></p>
     <p>Printtijd: <span id="time">0 h</span></p>
-    <button id="clearBtn">Verwijder model</button>
+
+    <button id="confirmOrderBtn">Bevestig order</button>
+    <button id="clearBtn" style="background:#999;margin-left:10px;">Verwijder model</button>
   </div>
 
   <script>
-    let scene, camera, renderer, controls, loader, currentMesh, currentGeometry;
+    let scene, camera, renderer, controls, loader, currentMesh, currentGeometry, currentFileName;
 
     init();
 
@@ -112,17 +127,12 @@
       controls = new THREE.OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
 
-      // Licht
       const ambient = new THREE.AmbientLight(0x888888, 1.2);
       scene.add(ambient);
 
       const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
       dirLight1.position.set(5, 10, 7);
       scene.add(dirLight1);
-
-      const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
-      dirLight2.position.set(-5, -10, -7);
-      scene.add(dirLight2);
 
       loader = new THREE.STLLoader();
 
@@ -138,6 +148,7 @@
     document.getElementById("fileInput").addEventListener("change", (e) => {
       const file = e.target.files[0];
       if (!file) return;
+      currentFileName = file.name;
 
       const reader = new FileReader();
       reader.onload = function (event) {
@@ -161,7 +172,6 @@
         scene.add(currentMesh);
         currentGeometry = geometry;
 
-        // Check build volume (Builder Extreme 1000)
         let size = new THREE.Vector3();
         geometry.boundingBox.getSize(size);
         if (size.x > 700 || size.y > 700 || size.z > 820) {
@@ -173,7 +183,6 @@
       reader.readAsArrayBuffer(file);
     });
 
-    // Volume berekening
     function computeMeshVolume(geometry) {
       let positions = geometry.attributes.position.array;
       let volume = 0;
@@ -188,40 +197,32 @@
       return Math.abs(volume);
     }
 
-    // Gewicht + prijs + tijd berekening
     function updateAll() {
       if (!currentGeometry) return;
 
-      let volume = computeMeshVolume(currentGeometry); // mm³
-      let density = 1.24e-3; // g/mm³
+      let volume = computeMeshVolume(currentGeometry);
+      let density = 1.24e-3;
 
-      // User input
       let infill = parseInt(document.getElementById("infill").value) / 100;
       let layerHeight = parseFloat(document.getElementById("layer").value);
 
-      // Gewicht met infill
       let weight = volume * density * infill;
-
       let pricePerGram = parseFloat(document.getElementById("material").value);
       let materialCost = weight * pricePerGram;
 
-      // Printtijd schatting met infill & correctie
       let nozzle = 0.4;
       let speed = 50;
-      let extrusionRate = nozzle * layerHeight * speed; // mm³/s
+      let extrusionRate = nozzle * layerHeight * speed;
       let correctionFactor = 1.3;
       let effectiveVolume = volume * infill * correctionFactor;
       let timeSeconds = effectiveVolume / extrusionRate;
       let timeHours = timeSeconds / 3600;
 
-      // Machinekost
-      let hourlyRate = 3.0; // € per uur
+      let hourlyRate = 3.0;
       let timeCost = timeHours * hourlyRate;
 
-      // Totaal
       let totalPrice = materialCost + timeCost;
 
-      // Output
       document.getElementById("weight").innerText = weight.toFixed(1) + " g";
       document.getElementById("matPrice").innerText = "€ " + materialCost.toFixed(2);
       document.getElementById("timePrice").innerText = "€ " + timeCost.toFixed(2);
@@ -248,7 +249,30 @@
       document.getElementById("price").innerText = "€ 0.00";
       document.getElementById("time").innerText = "0 h";
     });
+
+    // 📤 Nieuwe "Bevestig order" knop functionaliteit
+    document.getElementById("confirmOrderBtn").addEventListener("click", () => {
+      if (!currentGeometry) {
+        alert("Upload eerst een STL-bestand voordat je een order bevestigt.");
+        return;
+      }
+
+      const data = {
+        type: "ORDER_DATA",
+        stlFileName: currentFileName,
+        material: document.getElementById("material").selectedOptions[0].text,
+        color: document.getElementById("color").selectedOptions[0].text,
+        infill: document.getElementById("infill").value,
+        layer: document.getElementById("layer").selectedOptions[0].text,
+        weight: document.getElementById("weight").innerText,
+        totalPrice: document.getElementById("price").innerText,
+        time: document.getElementById("time").innerText
+      };
+
+      // 📬 Verstuur alles naar Wix (parent site)
+      window.parent.postMessage(data, "*");
+    });
   </script>
 </body>
-
 </html>
+
